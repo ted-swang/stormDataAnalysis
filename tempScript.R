@@ -112,36 +112,40 @@ stormData$EVTYPE <- stormData$EVTYPE %>%
                 OTHER = OtherFactors
                      ) 
 
-popHealthFull <- stormData %>%
+popHealth <- stormData %>%
         filter(FATALITIES > 0 | INJURIES >0) %>%
         group_by(EVTYPE) %>%
-        summarize(FATALITIES = sum(FATALITIES), INJURIES = sum(INJURIES)) %>%
-        mutate(CASUALTIES = FATALITIES + INJURIES) %>%
-        arrange(desc(CASUALTIES))
+        summarize(FATALITIES = sum(FATALITIES), INJURIES = sum(INJURIES))
 
-popHealthFull$EVTYPE <- popHealthFull$EVTYPE %>% 
+popHealth$EVTYPE <- popHealth$EVTYPE %>% 
         fct_drop
 
-sumFat <- sum(popHealthFull$FATALITIES)
-sumInj <- sum(popHealthFull$INJURIES)
-
-popHealthSummary <- popHealthFull %>%
-        group_by(EVTYPE) %>%
-        summarize(FATALITIES = sum(FATALITIES), INJURIES = sum(INJURIES)) %>%
-        mutate(FATALITIES = FATALITIES/sumFat, INJURIES = INJURIES/sumInj) %>%
+popHealthTidy <- popHealth %>%
         gather(CATEGORY, VALUE, FATALITIES:INJURIES)
 
-popHealthSummary$EVTYPE <- popHealthSummary$EVTYPE %>% 
-        as_factor %>% 
-        fct_relevel(levels(popHealthFull$EVTYPE))
-
-g <- ggplot(popHealthSummary, aes(x = EVTYPE, y = VALUE, fill = CATEGORY)) +
-        geom_col(position = "dodge") + 
-        theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g1 <- ggplot(popHealthTidy, aes(x = fct_reorder(EVTYPE, VALUE, sum, .desc = TRUE), y = VALUE, fill = CATEGORY)) +
+        geom_col(position = "stack") + 
+        theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5))
 
 econ <- stormData %>%
         filter(PROPDMG > 0 | CROPDMG >0) %>%
         group_by(EVTYPE) %>%
-        summarize(PropertyDamage = sum(PROPDMG), CropDamage = sum(CROPDMG)) %>%
+        summarize(PropertyDamage = sum(PROPDMG), CropDamage = sum(CROPDMG))
+
+econ$EVTYPE <- econ$EVTYPE %>% 
+        fct_drop
+
+econTidy <- econ %>%
+        gather(CATEGORY, VALUE, PropertyDamage:CropDamage)
+
+g2 <- ggplot(econTidy, aes(x = fct_reorder(EVTYPE, VALUE, sum, .desc = TRUE), y = VALUE, fill = CATEGORY)) +
+        geom_col(position = "stack") + 
+        theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5))
+
+popHealthSummary <- popHealth %>%
+        mutate(CASUALTIES = FATALITIES + INJURIES) %>%
+        select(EVTYPE, CASUALTIES)
+
+econSummary <- econ %>%
         mutate(TotalDamage = PropertyDamage + CropDamage) %>%
-        arrange(desc(TotalDamage))
+        select(EVTYPE, TotalDamage)
