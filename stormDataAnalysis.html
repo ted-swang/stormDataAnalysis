@@ -122,29 +122,193 @@ $(document).ready(function () {
 
 <div id="loading-and-preprocessing-the-data" class="section level2">
 <h2>Loading and preprocessing the data</h2>
+<p>First, we load some libraries we will be using for this analysis</p>
+<pre class="r"><code>library(dplyr)
+library(lubridate)
+library(tidyr)
+library(forcats)
+library(ggplot2)</code></pre>
+<p>We next load the data into R, assuming the data file is in the same directory as this document.</p>
 <pre class="r"><code>stormDataFilename &lt;- &quot;stormData.csv.bz2&quot;
+stormDataInit &lt;- read.csv(stormDataFilename)</code></pre>
+<p>After reading in the data, we take a look at the first few rows of the dataset (there are 902297).</p>
+<pre class="r"><code>dim(stormDataInit)</code></pre>
+<pre><code>## [1] 902297     37</code></pre>
+<pre class="r"><code>stormDataInit %&gt;% tbl_df %&gt;% head</code></pre>
+<pre><code>## # A tibble: 6 × 37
+##   STATE__           BGN_DATE BGN_TIME TIME_ZONE COUNTY COUNTYNAME  STATE
+##     &lt;dbl&gt;             &lt;fctr&gt;   &lt;fctr&gt;    &lt;fctr&gt;  &lt;dbl&gt;     &lt;fctr&gt; &lt;fctr&gt;
+## 1       1  4/18/1950 0:00:00     0130       CST     97     MOBILE     AL
+## 2       1  4/18/1950 0:00:00     0145       CST      3    BALDWIN     AL
+## 3       1  2/20/1951 0:00:00     1600       CST     57    FAYETTE     AL
+## 4       1   6/8/1951 0:00:00     0900       CST     89    MADISON     AL
+## 5       1 11/15/1951 0:00:00     1500       CST     43    CULLMAN     AL
+## 6       1 11/15/1951 0:00:00     2000       CST     77 LAUDERDALE     AL
+## # ... with 30 more variables: EVTYPE &lt;fctr&gt;, BGN_RANGE &lt;dbl&gt;,
+## #   BGN_AZI &lt;fctr&gt;, BGN_LOCATI &lt;fctr&gt;, END_DATE &lt;fctr&gt;, END_TIME &lt;fctr&gt;,
+## #   COUNTY_END &lt;dbl&gt;, COUNTYENDN &lt;lgl&gt;, END_RANGE &lt;dbl&gt;, END_AZI &lt;fctr&gt;,
+## #   END_LOCATI &lt;fctr&gt;, LENGTH &lt;dbl&gt;, WIDTH &lt;dbl&gt;, F &lt;int&gt;, MAG &lt;dbl&gt;,
+## #   FATALITIES &lt;dbl&gt;, INJURIES &lt;dbl&gt;, PROPDMG &lt;dbl&gt;, PROPDMGEXP &lt;fctr&gt;,
+## #   CROPDMG &lt;dbl&gt;, CROPDMGEXP &lt;fctr&gt;, WFO &lt;fctr&gt;, STATEOFFIC &lt;fctr&gt;,
+## #   ZONENAMES &lt;fctr&gt;, LATITUDE &lt;dbl&gt;, LONGITUDE &lt;dbl&gt;, LATITUDE_E &lt;dbl&gt;,
+## #   LONGITUDE_ &lt;dbl&gt;, REMARKS &lt;fctr&gt;, REFNUM &lt;dbl&gt;</code></pre>
+<p>For this analysis, we are answering questions about population health and economic consequences of weather, so we extract only the data we need for this analysis, namely data where fatalities, injuries, property damage, or crop damage are strictly greater than 0. We select columns correponding to this data, along with the event type.</p>
+<pre class="r"><code>stormData &lt;- stormDataInit %&gt;%
+        tbl_df %&gt;%
+        mutate(Year = year(mdy_hms(BGN_DATE))) %&gt;%
+        select(
+                Year,
+                EventType = EVTYPE, 
+                Fatalities = FATALITIES, 
+                Injuries = INJURIES, 
+                PropertyDamage = PROPDMG, 
+                PROPDMGEXP, 
+                CropDamage = CROPDMG, 
+                CROPDMGEXP
+                ) %&gt;%
+        filter(
+                Fatalities &gt; 0 | 
+                Injuries &gt; 0 | 
+                PropertyDamage &gt; 0 | 
+                CropDamage &gt; 0
+                )</code></pre>
+<p>The variables <code>PROPDMGEXP</code> and <code>CROPDMGEXP</code> give us a multiplicative factor for dollars of damage caused by a weather event. We treat “H” to mean hundred, “K” thousand, “M” million, “B” billion, and numeric values as scientific notation exponents (i.e. “2” corresponds to a multiplicative factor of 10^2), we prepare the columns PROPDMGEXP and CROPDMGEXP for numerical calculation. We use the <code>fct_collapse</code> function from the <code>forcats</code> package to make these columns uniform and numeric. For rows missing data in these columns, we assume the value is 0.</p>
+<pre class="r"><code>stormData$PROPDMGEXP &lt;- stormData$PROPDMGEXP %&gt;% 
+        fct_collapse(
+                &quot;0&quot; = c(&quot;0&quot;, &quot;&quot;, &quot;+&quot;, &quot;-&quot;, &quot;?&quot;),
+                &quot;2&quot; = c(&quot;h&quot;, &quot;H&quot;, &quot;2&quot;),
+                &quot;3&quot; = c(&quot;K&quot;, &quot;3&quot;),
+                &quot;6&quot; = c(&quot;M&quot;, &quot;m&quot;, &quot;6&quot;),
+                &quot;9&quot; = c(&quot;B&quot;)
+                ) %&gt;%
+        as.character %&gt;%
+        as.numeric
 
-stormDataURL &lt;- &quot;https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2&quot;
+stormData$CROPDMGEXP &lt;- stormData$CROPDMGEXP %&gt;% 
+        fct_collapse(
+                &quot;0&quot; = c(&quot;0&quot;, &quot;&quot;, &quot;?&quot;),
+                &quot;3&quot; = c(&quot;K&quot;, &quot;k&quot;),
+                &quot;6&quot; = c(&quot;M&quot;, &quot;m&quot;),
+                &quot;9&quot; = c(&quot;B&quot;)
+        ) %&gt;%
+        as.character %&gt;%
+        as.numeric</code></pre>
+<p>Now we compute the dollar values of the <code>PropertyDamage</code> and <code>CropDamage</code> columns, and get rid of the <code>PROPDMGEXP</code> and <code>CROPDMGEXP</code> columns.</p>
+<pre class="r"><code>stormData &lt;- stormData %&gt;% 
+        mutate(PropertyDamage = PropertyDamage*(10^PROPDMGEXP), CropDamage =  CropDamage*(10^CROPDMGEXP)) %&gt;%
+        select(-PROPDMGEXP, -CROPDMGEXP)</code></pre>
+<p>We now want to get an idea of common types of weather events listed.</p>
+<pre class="r"><code>table(stormData$EventType) %&gt;% sort(decreasing = TRUE) %&gt;% head(10)</code></pre>
+<pre><code>## 
+##          TSTM WIND  THUNDERSTORM WIND            TORNADO 
+##              63234              43655              39944 
+##               HAIL        FLASH FLOOD          LIGHTNING 
+##              26130              20967              13293 
+## THUNDERSTORM WINDS              FLOOD          HIGH WIND 
+##              12086              10175               5522 
+##        STRONG WIND 
+##               3370</code></pre>
+<p>We immediately notice a problem: the values of <code>EventType</code> may use different names to describe the same type of event (notice, for instance, the top two event: <code>TSTM WIND</code> and <code>THUNDERSTORM WIND</code>). To remedy this, We first define variables that group together names of similar factors.</p>
+<pre class="r"><code>## factor names for tornado related factors, including waterspouts, dust devils, and whirlwinds
+TornadoFactors &lt;- c(&quot;TORNADO&quot;, &quot;TORNADO F0&quot;, &quot;WATERSPOUT/TORNADO&quot;, &quot;WATERSPOUT TORNADO&quot;, &quot;TORNADOES, TSTM WIND, HAIL&quot;, &quot;WATERSPOUT-TORNADO&quot;, &quot;COLD AIR TORNADO&quot;, &quot;WATERSPOUT/ TORNADO&quot;, &quot;TORNADO F3&quot;, &quot;TORNADO F1&quot;, &quot;TORNADO F2&quot;, &quot;TORNADOES&quot;, &quot;FUNNEL CLOUD&quot;, &quot;WATERSPOUT&quot;, &quot;WATERSPOUT-&quot;, &quot;DUST DEVIL WATERSPOUT&quot;, &quot;DUST DEVIL&quot;, &quot;Dust Devil&quot;, &quot;Whirlwind&quot;, &quot;WHIRLWIND&quot;, &quot;GUSTNADO&quot;, &quot;TORNDAO&quot;, &quot;LANDSPOUT&quot;)
 
-if(!(stormDataFilename %in% list.files())) {
-        download.file(stormDataURL, destfile = stormDataFilename, mode = &quot;wb&quot;)
-}
+## factor names for flood related factors. 
+FloodFactors &lt;- c(&quot;ICE STORM/FLASH FLOOD&quot;, &quot;FLASH FLOODING&quot;, &quot;FLASH FLOOD&quot;, &quot;FLASH FLOODING/THUNDERSTORM WI&quot;, &quot;FLOODING&quot;, &quot;BREAKUP FLOODING&quot;, &quot;RIVER FLOOD&quot;, &quot;COASTAL FLOOD&quot;, &quot;FLOOD&quot;, &quot;FLOODING/HEAVY RAIN&quot;, &quot;HEAVY SURF COASTAL FLOODING&quot;, &quot;FLOOD/FLASH FLOOD&quot;, &quot;FLOOD/RAIN/WINDS&quot;, &quot;FLASH FLOOD WINDS&quot;, &quot;FLASH FLOOD/&quot;, &quot;URBAN FLOOD&quot;, &quot;COASTAL FLOODING&quot;, &quot;URBAN/SMALL STREAM FLOOD&quot;, &quot;URBAN FLOODING&quot;, &quot;MINOR FLOODING&quot;, &quot;FLASH FLOODS&quot;, &quot;FLOODS&quot;, &quot;RURAL FLOOD&quot;, &quot;MAJOR FLOOD&quot;, &quot;ICE JAM FLOODING&quot;, &quot;SMALL STREAM FLOOD&quot;, &quot;LAKE FLOOD&quot;, &quot;URBAN AND SMALL STREAM FLOODIN&quot;, &quot;RIVER AND STREAM FLOOD&quot;, &quot;HIGH WINDS/COASTAL FLOOD&quot;, &quot;RIVER FLOODING&quot;, &quot;FLOOD/RIVER FLOOD&quot;, &quot;MUD SLIDES URBAN FLOODING&quot;, &quot;HEAVY SNOW/HIGH WINDS &amp; FLOOD&quot;, &quot;HEAVY RAIN AND FLOOD&quot;, &quot;FLASH FLOOD FROM ICE JAMS&quot;, &quot;FLASH FLOOD - HEAVY RAIN&quot;, &quot;FLASH FLOOD/ STREET&quot;, &quot;FLOOD FLASH&quot;, &quot;FLASH FLOOD/FLOOD&quot;, &quot;FLOOD/FLASH&quot;, &quot;HEAVY RAINS/FLOODING&quot;, &quot;THUNDERSTORM WINDS/FLOODING&quot;, &quot;SNOWMELT FLOODING&quot;, &quot;FLASH FLOODING/FLOOD&quot;, &quot;THUNDERSTORM WINDS/ FLOOD&quot;, &quot;FLOOD &amp; HEAVY RAIN&quot;, &quot;FLOOD/FLASHFLOOD&quot;, &quot;URBAN FLOODS&quot;, &quot;FLASH FLOOD/LANDSLIDE&quot;, &quot;FLASH FLOOD LANDSLIDES&quot;, &quot;Ice jam flood (minor&quot;, &quot;Erosion/Cstl Flood&quot;, &quot;River Flooding&quot;, &quot;Coastal Flooding&quot;, &quot;TIDAL FLOODING&quot;, &quot;Tidal Flooding&quot;, &quot;Coastal Flood&quot;, &quot;COASTAL FLOODING/EROSION&quot;, &quot;COASTAL  FLOODING/EROSION&quot;, &quot;FLOOD/FLASH/FLOOD&quot;, &quot; FLASH FLOOD&quot;, &quot;LAKESHORE FLOOD&quot;, &quot;DROWNING&quot;, &quot;EXCESSIVE RAINFALL&quot;, &quot;RAPIDLY RISING WATER&quot;, &quot;Torrential Rainfall&quot;, &quot;HIGH WATER&quot;, &quot;URBAN/SML STREAM FLD&quot;, &quot;DAM BREAK&quot;, &quot;URBAN AND SMALL&quot;, &quot;URBAN SMALL&quot;, &quot;URBAN/SMALL STREAM&quot;)
 
-stormDataDocFilename &lt;- &quot;stormDataDoc.pdf&quot;
+## factor names for hail related factors
+HailFactors &lt;- c(&quot;HAIL&quot;, &quot;THUNDERSTORM WINDS/HAIL&quot;, &quot;THUNDERSTORM WINDS HAIL&quot;, &quot;HAIL/WINDS&quot;, &quot;HAIL/WIND&quot;, &quot;WIND/HAIL&quot;, &quot;HAIL 150&quot;, &quot;HAIL 075&quot;, &quot;HAIL 100&quot;, &quot;HAIL 125&quot;, &quot;HAIL 200&quot;, &quot;HAIL 0.75&quot;, &quot;THUNDERSTORM HAIL&quot;, &quot;THUNDERSTORM WINDSHAIL&quot;, &quot;HAIL 75&quot;, &quot;THUNDERSTORM WIND/HAIL&quot;, &quot;HAIL 175&quot;, &quot;HAIL 275&quot;, &quot;HAIL 450&quot;, &quot;HAILSTORM&quot;, &quot;HAIL DAMAGE&quot;, &quot;TSTM WIND/HAIL&quot;, &quot;SMALL HAIL&quot;, &quot;GUSTY WIND/HAIL&quot;, &quot;MARINE HAIL&quot;)
 
-stormDataDocURL &lt;- &quot;https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf&quot;
+## Factor names for Thunderstorm related factors including wind and lightning.
+## Does not include tornadoes, floods, or hail
+TStormFactors &lt;- c(&quot;THUNDERSTORM WINDS&quot;, &quot;THUNDERSTORM WIND&quot;, &quot;THUNDERSTORM WINS&quot;, &quot;THUNDERSTORM WINDS LIGHTNING&quot;, &quot;THUNDERSTORM WINDS/FUNNEL CLOU&quot;, &quot;SEVERE THUNDERSTORM&quot;, &quot;SEVERE THUNDERSTORMS&quot;, &quot;SEVERE THUNDERSTORM WINDS&quot;, &quot;THUNDERSTORMS WINDS&quot;, &quot;THUNDERSTORMS&quot;, &quot;THUNDERSTORM WINDSS&quot;, &quot;LIGHTNING THUNDERSTORM WINDS&quot;, &quot;LIGHTNING AND THUNDERSTORM WIN&quot;, &quot;THUNDERSTORM WINDS53&quot;, &quot;THUNDERSTORM WINDS 13&quot;, &quot;THUNDERSTORM  WINDS&quot;, &quot;THUNDERSTORMS WIND&quot;, &quot;THUNDERSTORM WIND/LIGHTNING&quot;, &quot;THUNDERSTORM&quot;, &quot;THUNDERSTORM WIND G50&quot;, &quot;THUNDERSTORM WINDS.&quot;, &quot;THUNDERSTORM WIND G55&quot;, &quot;THUNDERSTORM WIND G60&quot;, &quot;THUNDERSTORM WINDS G60&quot;, &quot;THUNDERSTORM WIND 65MPH&quot;, &quot;THUNDERSTORM WIND/ TREES&quot;, &quot;THUNDERSTORM WIND/AWNING&quot;, &quot;THUNDERSTORM WIND 98 MPH&quot;, &quot;THUNDERSTORM WIND TREES&quot;, &quot;THUNDERSTORM WIND 60 MPH&quot;, &quot;THUNDERSTORM WINDS 63 MPH&quot;, &quot;THUNDERSTORM WIND/ TREE&quot;, &quot;THUNDERSTORM DAMAGE TO&quot;, &quot;THUNDERSTORM WIND 65 MPH&quot;, &quot;THUNDERSTORM WIND.&quot;, &quot;THUNDERSTORM WINDS AND&quot;, &quot;THUNDERSTORM WIND G52&quot;, &quot;THUNDERSTORMW&quot;, &quot;THUNDERSTORMWINDS&quot;, &quot;THUNDERSTORM WIND (G40)&quot;, &quot;MARINE THUNDERSTORM WIND&quot;, &quot;TSTM WIND&quot;, &quot;TSTM WIND 55&quot;, &quot;TSTM WIND G58&quot;, &quot;TSTM WIND DAMAGE&quot;, &quot;TSTM WINDS&quot;, &quot;TSTMW&quot;, &quot;TSTM WIND 65)&quot;, &quot;Tstm Wind&quot;, &quot;TSTM WIND (G45)&quot;, &quot;TSTM WIND 40&quot;, &quot;TSTM WIND 45&quot;, &quot;TSTM WIND (41)&quot;, &quot;TSTM WIND (G40)&quot;, &quot;TSTM WIND AND LIGHTNING&quot;, &quot; TSTM WIND (G45)&quot;, &quot;TSTM WIND  (G45)&quot;, &quot;TSTM WIND (G35)&quot;, &quot; TSTM WIND&quot;, &quot;TSTM WIND G45&quot;, &quot;MARINE TSTM WIND&quot;, &quot;LIGHTNING&quot;, &quot;LIGHTNING AND HEAVY RAIN&quot;, &quot;HEAVY RAIN/LIGHTNING&quot;, &quot;LIGHTNING/HEAVY RAIN&quot;, &quot;LIGHTNING INJURY&quot;, &quot;LIGHTNING.&quot;, &quot;LIGHTNING  WAUSEON&quot;, &quot;LIGHTING&quot;, &quot;THUNDERTORM WINDS&quot;, &quot;THUDERSTORM WINDS&quot;, &quot;THUNDERESTORM WINDS&quot;, &quot;THUNDEERSTORM WINDS&quot;, &quot;THUNERSTORM WINDS&quot;, &quot;LIGNTNING&quot;, &quot;THUNDERSTROM WIND&quot;, &quot;TUNDERSTORM WIND&quot;, &quot;HEAVY RAIN/SEVERE WEATHER&quot;)
 
-if(!(stormDataDocFilename %in% list.files())) {
-        download.file(stormDataDocURL, destfile = stormDataDocFilename, mode = &quot;wb&quot;)
-}
-        
-stormDataFAQFilename &lt;- &quot;stormDataFAQ.pdf&quot;
+## factor names for heat related factors
+HeatFactors &lt;- c(&quot;HEAT&quot;, &quot;EXCESSIVE HEAT&quot;, &quot;HEAT WAVE&quot;, &quot;EXTREME HEAT&quot;, &quot;DROUGHT/EXCESSIVE HEAT&quot;, &quot;RECORD HEAT&quot;, &quot;HEAT WAVE DROUGHT&quot;, &quot;HEAT WAVES&quot;, &quot;RECORD/EXCESSIVE HEAT&quot;, &quot;Heat Wave&quot;, &quot;UNSEASONABLY WARM&quot;, &quot;UNSEASONABLY WARM AND DRY&quot;, &quot;WARM WEATHER&quot;, &quot;HYPERTHERMIA/EXPOSURE&quot;)
 
-stormDataFAQURL &lt;- &quot;https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf&quot;
+## factor names for cold-related factors, including frost, freeze, hypothermia
+## does not include snow, winter storms, or avalanches.
+ColdFactors &lt;- c(&quot;COLD&quot;, &quot;EXTREME COLD&quot;, &quot;COLD AND WET CONDITIONS&quot;, &quot;RECORD COLD&quot;, &quot;COLD WAVE&quot;, &quot;FOG AND COLD TEMPERATURES&quot;, &quot;UNSEASONABLY COLD&quot;, &quot;HIGH WINDS/COLD&quot;, &quot;COLD/WINDS&quot;, &quot;COLD WEATHER&quot;, &quot;Unseasonable Cold&quot;, &quot;Extreme Cold&quot;, &quot;Extended Cold&quot;, &quot;Cold&quot;, &quot;Cold Temperature&quot;, &quot;EXTREME COLD/WIND CHILL&quot;, &quot;COLD/WIND CHILL&quot;,&quot;EXTREME WIND CHILL&quot;, &quot;EXTREME WINDCHILL&quot;, &quot;LOW TEMPERATURE&quot;, &quot;FROST&quot;, &quot;FROST\\FREEZE&quot;, &quot;Early Frost&quot;, &quot;Frost/Freeze&quot;, &quot;FROST/FREEZE&quot;, &quot;FREEZE&quot;, &quot;DAMAGING FREEZE&quot;, &quot;FROST\\FREEZE&quot;, &quot;HARD FREEZE&quot;, &quot;Freeze&quot;, &quot;Damaging Freeze&quot;, &quot;Frost/Freeze&quot;, &quot;AGRICULTURAL FREEZE&quot;, &quot;HYPOTHERMIA&quot;, &quot;Hypothermia/Exposure&quot;, &quot;HYPOTHERMIA/EXPOSURE&quot;)
 
-if(!(stormDataFAQFilename %in% list.files())) {
-        download.file(stormDataFAQURL, destfile = stormDataFAQFilename, mode = &quot;wb&quot;)
-}</code></pre>
+## factor names for hurricane related factors, including tropical storms, typhoons, tropical depressions, tsunamis
+HurricaneFactors &lt;-  c(&quot;HURRICANE OPAL/HIGH WINDS&quot;, &quot;HURRICANE ERIN&quot;, &quot;HURRICANE OPAL&quot;, &quot;HURRICANE&quot;, &quot;HURRICANE-GENERATED SWELLS&quot;, &quot;HURRICANE EMILY&quot;, &quot;HURRICANE GORDON&quot;, &quot;HURRICANE FELIX&quot;, &quot;Hurricane Edouard&quot;, &quot;HURRICANE/TYPHOON&quot;, &quot;TYPHOON&quot;, &quot;TROPICAL STORM ALBERTO&quot;, &quot;TROPICAL STORM&quot;, &quot;TROPICAL STORM GORDON&quot;, &quot;TROPICAL STORM JERRY&quot;, &quot;TROPICAL STORM DEAN&quot;, &quot;TROPICAL DEPRESSION&quot;, &quot;TSUNAMI&quot;)
+
+## factor names for winter storm related factors, including ice, sleet, snow, mixed precip, icy roads, and freezing rain
+WinterStormFactors &lt;- c(&quot;WINTER STORM&quot;, &quot;WINTER STORM HIGH WINDS&quot;, &quot;WINTER STORMS&quot;, &quot;WINTER WEATHER&quot;, &quot;HEAVY SNOW/WINTER STORM&quot;, &quot;BLIZZARD/WINTER STORM&quot;, &quot;Wintry Mix&quot;, &quot;WINTRY MIX&quot;, &quot;WINTER WEATHER MIX&quot;, &quot;WINTER WEATHER/MIX&quot;, &quot;HEAVY SNOW&quot;, &quot;HEAVY SNOW/WIND&quot;, &quot;HEAVY SNOWPACK&quot;, &quot;SNOW&quot;, &quot;FREEZING RAIN/SNOW&quot;, &quot;THUNDERSNOW&quot;, &quot;HEAVY RAIN/SNOW&quot;, &quot;SNOW AND HEAVY SNOW&quot;, &quot;SNOW/HEAVY SNOW&quot;, &quot;SNOW AND ICE&quot;, &quot;SNOW AND ICE STORM&quot;, &quot;HEAVY LAKE SNOW&quot;, &quot;HEAVY SNOW/FREEZING RAIN&quot;, &quot;HEAVY SNOW/WINTER STORM&quot;, &quot;HEAVY SNOW AND HIGH WINDS&quot;, &quot;SNOW/COLD&quot;, &quot;HEAVY SNOW SQUALLS&quot;, &quot;SNOW SQUALL&quot;, &quot;SNOW/ICE STORM&quot;, &quot;HEAVY SNOW/SQUALLS&quot;, &quot;HEAVY SNOW-SQUALLS&quot;, &quot;SNOW FREEZING RAIN&quot;, &quot;SNOW/SLEET&quot;, &quot;SNOW/FREEZING RAIN&quot;, &quot;SNOW SQUALLS&quot;, &quot;SNOW/SLEET/FREEZING RAIN&quot;, &quot;RECORD SNOW&quot;, &quot;BLOWING SNOW&quot;, &quot;HEAVY SNOW/BLIZZARD&quot;, &quot;ICE AND SNOW&quot;, &quot;HEAVY SNOW/ICE&quot;, &quot;HIGH WIND/HEAVY SNOW&quot;, &quot;SNOW/ICE&quot;, &quot;HEAVY SNOW/BLIZZARD/AVALANCHE&quot;, &quot;SNOW/ BITTER COLD&quot;, &quot;SNOW/HIGH WINDS&quot;, &quot;HIGH WINDS/SNOW&quot;, &quot;HEAVY SNOW AND STRONG WINDS&quot;, &quot;SNOW ACCUMULATION&quot;, &quot;SNOW/ ICE&quot;, &quot;SNOW/BLOWING SNOW&quot;, &quot;Heavy snow shower&quot;, &quot;Light snow&quot;, &quot;Light Snow&quot;, &quot;Snow Squalls&quot;, &quot;Light Snowfall&quot;, &quot;Snow&quot;, &quot;COLD AND SNOW&quot;, &quot;RAIN/SNOW&quot;, &quot;Lake Effect Snow&quot;, &quot;LIGHT SNOW&quot;, &quot;blowing snow&quot;, &quot;EXCESSIVE SNOW&quot;, &quot;LAKE EFFECT SNOW&quot;, &quot;LATE SEASON SNOW&quot;, &quot;FALLING SNOW/ICE&quot;, &quot;LAKE-EFFECT SNOW&quot;, &quot;ICE STORM&quot;, &quot;GLAZE ICE&quot;, &quot;SLEET/ICE STORM&quot;, &quot;ICE&quot;, &quot;ICE FLOES&quot;, &quot;GLAZE/ICE STORM&quot;, &quot;ICE JAM&quot;, &quot;ICE/STRONG WINDS&quot;, &quot;BLACK ICE&quot;, &quot;ICE ROADS&quot;, &quot;ICE ON ROAD&quot;, &quot;SLEET&quot;, &quot;FREEZING RAIN/SLEET&quot;, &quot;FREEZING RAIN&quot;, &quot;FREEZING DRIZZLE&quot;, &quot;Freezing Spray&quot;, &quot;Freezing Drizzle&quot;,  &quot;Freezing Rain&quot;, &quot;Freezing drizzle&quot;, &quot;LIGHT FREEZING RAIN&quot;, &quot;FREEZING FOG&quot;, &quot;BLIZZARD&quot;, &quot;GROUND BLIZZARD&quot;, &quot;HIGH WIND/BLIZZARD&quot;, &quot;GLAZE&quot;, &quot;Glaze&quot;, &quot;MIXED PRECIP&quot;, &quot;ICY ROADS&quot;, &quot;Mixed Precipitation&quot;, &quot;MIXED PRECIPITATION&quot;, &quot;HEAVY MIX&quot;)
+
+## factor names for wind related factors.
+## does not include thunderstorms, hail, cold
+## does include rain/wind factors, microbursts
+WindFactors &lt;- c(&quot;HIGH WINDS&quot;, &quot;WIND&quot;, &quot;HIGH WIND&quot;, &quot;HIGH WINDS HEAVY RAINS&quot;, &quot;HIGH WIND/SEAS&quot;, &quot;HIGH WINDS/HEAVY RAIN&quot;, &quot;GUSTY WINDS&quot;, &quot;WINDS&quot;, &quot;HIGH WIND DAMAGE&quot;, &quot;STRONG WIND&quot;, &quot;DRY MIRCOBURST WINDS&quot;, &quot;MICROBURST WINDS&quot;, &quot;STRONG WINDS&quot;, &quot;HIGH WINDS/&quot;, &quot;HIGH  WINDS&quot;, &quot;WIND DAMAGE&quot;, &quot;WIND STORM&quot;, &quot;DUST STORM/HIGH WINDS&quot;, &quot;STORM FORCE WINDS&quot;, &quot;RAIN/WIND&quot;, &quot;HIGH WIND AND SEAS&quot;, &quot;HIGH WIND 48&quot;, &quot;Strong Wind&quot;, &quot;Strong Winds&quot;, &quot;Wind Damage&quot;, &quot;Gusty wind/rain&quot;, &quot;GUSTY WIND/HVY RAIN&quot;, &quot;Wind&quot;, &quot;Gusty Winds&quot;, &quot;GUSTY WIND&quot;, &quot;Gusty winds&quot;, &quot;GRADIENT WIND&quot;, &quot;gradient wind&quot;, &quot;Gradient wind&quot;, &quot;Heavy surf and wind&quot;, &quot;HIGH WIND (G40)&quot;, &quot;WIND AND WAVE&quot;, &quot;NON-SEVERE WIND DAMAGE&quot;, &quot;NON-TSTM WIND&quot;, &quot;NON TSTM WIND&quot;, &quot;MARINE HIGH WIND&quot;, 
+&quot;MARINE STRONG WIND&quot;, &quot;SEVERE TURBULENCE&quot;, &quot;MICROBURST&quot;, &quot;DRY MICROBURST&quot;, &quot;WET MICROBURST&quot;, &quot;Microburst&quot;, &quot;DOWNBURST&quot;)
+
+## factor names for fire-related factors
+FireFactors &lt;- c(&quot;WILD FIRES&quot;, &quot;WILDFIRE&quot;, &quot;GRASS FIRES&quot;, &quot;LIGHTNING FIRE&quot;, &quot;FOREST FIRES&quot;, &quot;WILDFIRES&quot;, &quot;WILD/FOREST FIRE&quot;, &quot;WILD/FOREST FIRES&quot;, &quot;BRUSH FIRE&quot;)
+
+## factor names for fog-related factors. Does not include cold weather
+## includes dense smoke
+FogFactors &lt;- c(&quot;DENSE FOG&quot;, &quot;FOG&quot;, &quot;DENSE SMOKE&quot;)
+
+## factor names for marine weather related factors.
+## includes rip currents, heavy surf, coastal storm, storm surge, coastal erosion, low and high tides
+## does not include hurricanes, tropical storms
+MarineFactors &lt;- c(&quot;RIP CURRENT&quot;, &quot;RIP CURRENTS&quot;, &quot;HIGH SURF&quot;, &quot;HEAVY SURF/HIGH SURF&quot;, &quot;STORM SURGE&quot;, &quot;HEAVY SURF&quot;, &quot;STORM SURGE/TIDE&quot;, &quot;HIGH SEAS&quot;, &quot;ROUGH SEAS&quot;, &quot;MARINE MISHAP&quot;, &quot;High Surf&quot;, &quot;RIP CURRENTS/HEAVY SURF&quot;, &quot;ROUGH SURF&quot;, &quot;COASTAL STORM&quot;, &quot;Marine Accident&quot;, &quot;HEAVY SEAS&quot;, &quot;ROGUE WAVE&quot;, &quot;Coastal Storm&quot;, &quot;COASTALSTORM&quot;, &quot;HAZARDOUS SURF&quot;, &quot;Heavy Surf&quot;, &quot;HIGH SWELLS&quot;, &quot;HIGH WAVES&quot;, &quot;COASTAL SURGE&quot;, &quot;HEAVY SWELLS&quot;, &quot;Heavy Rain/High Surf&quot;, &quot;COASTAL EROSION&quot;, &quot;   HIGH SURF ADVISORY&quot;, &quot;Beach Erosion&quot;, &quot;ASTRONOMICAL HIGH TIDE&quot;, &quot;ASTRONOMICAL LOW TIDE&quot;, &quot;HIGH TIDES&quot;, &quot;SEICHE&quot;)
+
+## factor names for heavy rain related factors, not including thunderstorms
+RainFactors &lt;- c(&quot;HEAVY RAIN&quot;, &quot;HEAVY RAINS&quot;, &quot;RECORD RAINFALL&quot;, &quot;RAINSTORM&quot;, &quot;COOL AND WET&quot;, &quot;HVY RAIN&quot;, &quot;RAIN&quot;, &quot;EXCESSIVE WETNESS&quot;, &quot;HEAVY SHOWER&quot;, &quot;HEAVY RAIN/SMALL STREAM URBAN&quot;, &quot;UNSEASONAL RAIN&quot;, &quot;HEAVY PRECIPITATION&quot;)
+
+## factor names for landslide related factors, including mudslides, avalanches, and rocklides
+LandslideFactors &lt;- c(&quot;LANDSLIDE&quot;, &quot;AVALANCHE&quot;, &quot;MUDSLIDES&quot;, &quot;MUD SLIDES&quot;, &quot;MUDSLIDE&quot;, &quot;LANDSLIDES&quot;, &quot;Landslump&quot;, &quot;Mudslides&quot;, &quot;Mudslide&quot;, &quot;ROCK SLIDE&quot;, &quot;AVALANCE&quot;, &quot;MUD SLIDE&quot;)
+
+## factor names for dry related factors. 
+## includes volcanic ash, drought
+DryFactors &lt;- c(&quot;DUST STORM&quot;, &quot;BLOWING DUST&quot;, &quot;VOLCANIC ASH&quot;, &quot;DROUGHT&quot;)
+
+## factor names that don't readily fit into any other category
+OtherFactors &lt;- c(&quot;?&quot;, &quot;OTHER&quot;, &quot;Other&quot;, &quot;HIGH&quot;, &quot;APACHE COUNTY&quot;)</code></pre>
+<p>We use the function <code>fct_collapse</code> from the <code>forcats</code> package to consolidate our <code>EventType</code> factor vector</p>
+<pre class="r"><code>stormData$EventType &lt;- fct_collapse(stormData$EventType,
+                TSTORM = TStormFactors,
+                TORNADO = TornadoFactors,
+                HEAT = HeatFactors,
+                FLOOD = FloodFactors,
+                TROPSTORM = HurricaneFactors,
+                WINTERSTORM = WinterStormFactors,
+                WIND = WindFactors,
+                FIRE = FireFactors,
+                HAIL = HailFactors,
+                COLD = ColdFactors,
+                FOG = FogFactors, 
+                MARINE = MarineFactors,
+                RAIN = RainFactors, 
+                LANDSLIDE = LandslideFactors,
+                DRY = DryFactors,
+                OTHER = OtherFactors
+                )</code></pre>
+<p>Finally, let’s get a summary of our data</p>
+<pre class="r"><code>stormDataSummary &lt;- stormData %&gt;% 
+        group_by(EventType) %&gt;%
+        summarize(
+                Fatalities = sum(Fatalities), 
+                Injuries = sum(Injuries), 
+                PropertyDamage = sum(PropertyDamage), 
+                CropDamage = sum(CropDamage)
+                )</code></pre>
+<p>Let’s now take a look at our processed data.</p>
+<pre class="r"><code>stormData</code></pre>
+<pre><code>## # A tibble: 254,633 × 6
+##     Year EventType Fatalities Injuries PropertyDamage CropDamage
+##    &lt;dbl&gt;    &lt;fctr&gt;      &lt;dbl&gt;    &lt;dbl&gt;          &lt;dbl&gt;      &lt;dbl&gt;
+## 1   1950   TORNADO          0       15          25000          0
+## 2   1950   TORNADO          0        0           2500          0
+## 3   1951   TORNADO          0        2          25000          0
+## 4   1951   TORNADO          0        2           2500          0
+## 5   1951   TORNADO          0        2           2500          0
+## 6   1951   TORNADO          0        6           2500          0
+## 7   1951   TORNADO          0        1           2500          0
+## 8   1952   TORNADO          0        0           2500          0
+## 9   1952   TORNADO          1       14          25000          0
+## 10  1952   TORNADO          0        0          25000          0
+## # ... with 254,623 more rows</code></pre>
 </div>
 
 
