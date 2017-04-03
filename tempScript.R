@@ -2,6 +2,7 @@ library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(forcats)
+library(lubridate)
 
 stormDataFilename <- "stormData.csv.bz2"
 
@@ -31,7 +32,8 @@ if(!("stormDataInit" %in% ls())) stormDataInit <- read.csv(stormDataFilename)
 
 stormData <- stormDataInit %>%
         tbl_df %>%
-        select(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+        mutate(Year = year(mdy_hms(BGN_DATE))) %>%
+        select(Year, EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
         filter(FATALITIES > 0 | INJURIES > 0 | PROPDMG > 0 | CROPDMG > 0)
 
 stormData$EVTYPE <- stormData$EVTYPE %>% fct_drop
