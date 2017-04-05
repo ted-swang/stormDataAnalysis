@@ -1,7 +1,7 @@
 # Reproducible Research: Peer Assessment 2
 
 
-## Loading and preprocessing the data
+## Data Processing
 First, we load some libraries we will be using for this analysis
 
 
@@ -81,7 +81,7 @@ stormData <- stormDataInit %>%
                 )
 ```
 
-The variables `PROPDMGEXP` and `CROPDMGEXP` give us a multiplicative factor for dollars of damage caused by a weather event. We treat "H" to mean hundred, "K" thousand, "M" million, "B" billion, and numeric values as scientific notation exponents (i.e. "2" corresponds to a multiplicative factor of 10^2), we prepare the columns PROPDMGEXP and CROPDMGEXP for numerical calculation. We use the `fct_collapse` function from the `forcats` package to make these columns uniform and numeric. For rows missing data in these columns, we assume the value is 0. 
+The variables `PROPDMGEXP` and `CROPDMGEXP` give us a multiplicative factor for dollars of damage caused by a weather event. We take "H" to mean hundred, "K" thousand, "M" million, "B" billion, and numeric values to mean a scientific notation exponents (i.e. "2" corresponds to a multiplicative factor of 10^2), we prepare the columns PROPDMGEXP and CROPDMGEXP for numerical calculation. We use the `fct_collapse` function from the `forcats` package to make these columns uniform by making them all scientific notation exponents. For rows missing data in these columns, we assume the value is 0. Finally, we transform this into numeric data.
 
 
 ```r
@@ -197,7 +197,7 @@ DryFactors <- c("DUST STORM", "BLOWING DUST", "VOLCANIC ASH", "DROUGHT")
 OtherFactors <- c("?", "OTHER", "Other", "HIGH", "APACHE COUNTY")
 ```
 
-We use the function `fct_collapse` from the `forcats` package to consolidate our `EventType` factor vector
+We use the function `fct_collapse` from the `forcats` package to consolidate our `EventType` factor vector.
 
 
 ```r
@@ -221,11 +221,37 @@ stormData$EventType <- fct_collapse(stormData$EventType,
                 )
 ```
 
-Finally, let's get a summary of our data
+Let's now take a look at a sample of our processed data.
 
 
 ```r
-stormDataSummary <- stormData %>% 
+set.seed(10)
+stormData %>% sample_n(10)
+```
+
+```
+## # A tibble: 10 × 6
+##     Year   EventType Fatalities Injuries PropertyDamage CropDamage
+##    <dbl>      <fctr>      <dbl>    <dbl>          <dbl>      <dbl>
+## 1   2002      TSTORM          0        0          20000          0
+## 2   1998       FLOOD          1        2       31950000          0
+## 3   2000 WINTERSTORM          0        0          30000          0
+## 4   2007      TSTORM          0        0          10000          0
+## 5   1989     TORNADO          0       12        2500000          0
+## 6   1996      TSTORM          0        0           1000          0
+## 7   1997      TSTORM          0        0           5000          0
+## 8   1997        COLD          1        0              0          0
+## 9   2005       FLOOD          0        0           2000          0
+## 10  2000      TSTORM          0        0            500          0
+```
+
+## Results
+
+We now summarize our data by finding the sum of all of our relevant categories for all years, 1950 to 2011.
+
+
+```r
+stormDataSummaryAll <- stormData %>% 
         group_by(EventType) %>%
         summarize(
                 Fatalities = sum(Fatalities), 
@@ -233,28 +259,55 @@ stormDataSummary <- stormData %>%
                 PropertyDamage = sum(PropertyDamage), 
                 CropDamage = sum(CropDamage)
                 )
+stormDataSummaryAll
 ```
 
-Let's now take a look at our processed data.
+```
+## # A tibble: 16 × 5
+##      EventType Fatalities Injuries PropertyDamage  CropDamage
+##         <fctr>      <dbl>    <dbl>          <dbl>       <dbl>
+## 1       MARINE        789      842    48092088650     2355000
+## 2        FLOOD       1560     8708   168272042535 12388597200
+## 3       TSTORM       1542    14678    14574957106  1218950828
+## 4        OTHER          0        5          65500     1034400
+## 5         COLD        470      328      265534400  3430826500
+## 6    LANDSLIDE        269      225      331117900    20017000
+## 7  WINTERSTORM        672     6402    12439056511  5316281400
+## 8          DRY         22      444     1052175000 13975666000
+## 9         FIRE         90     1608     8501628500   403281630
+## 10     TORNADO       5667    91482    58613917407   417463070
+## 11        RAIN         98      255      712389190   951652800
+## 12         FOG         80     1076       22929500           0
+## 13        WIND        453     1920     6087049723   750840400
+## 14        HEAT       3179     9243       20325750   904479280
+## 15        HAIL         20     1467    16022991537  3111712873
+## 16   TROPSTORM        234     1845    93216599560  6211033800
+```
+
+To see which type of weather events had the greatest effect on population health, we limit our view to fatalities and injuries. 
 
 
 ```r
-stormData
+popHealthAll <- stormDataSummaryAll %>% 
+        select(EventType, Fatalities, Injuries) %>% 
+        gather(Category, Value, Fatalities:Injuries)
+
+g1 <- ggplot(popHealthAll, aes(x = fct_reorder(EventType, Value, sum, .desc = TRUE), y = Value, fill = Category)) 
+
+g1 + geom_col(position = "stack") + theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5))
 ```
 
+![](stormDataAnalysis_files/figure-html/popHealthAll-1.png)<!-- -->
+
+
+```r
+econAll <- stormDataSummaryAll %>% 
+        select(EventType, PropertyDamage, CropDamage) %>% 
+        gather(Category, Value, PropertyDamage:CropDamage)
+
+g2 <- ggplot(econAll, aes(x = fct_reorder(EventType, Value, sum, .desc = TRUE), y = Value, fill = Category)) 
+
+g2 + geom_col(position = "stack") + theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5))
 ```
-## # A tibble: 254,633 × 6
-##     Year EventType Fatalities Injuries PropertyDamage CropDamage
-##    <dbl>    <fctr>      <dbl>    <dbl>          <dbl>      <dbl>
-## 1   1950   TORNADO          0       15          25000          0
-## 2   1950   TORNADO          0        0           2500          0
-## 3   1951   TORNADO          0        2          25000          0
-## 4   1951   TORNADO          0        2           2500          0
-## 5   1951   TORNADO          0        2           2500          0
-## 6   1951   TORNADO          0        6           2500          0
-## 7   1951   TORNADO          0        1           2500          0
-## 8   1952   TORNADO          0        0           2500          0
-## 9   1952   TORNADO          1       14          25000          0
-## 10  1952   TORNADO          0        0          25000          0
-## # ... with 254,623 more rows
-```
+
+![](stormDataAnalysis_files/figure-html/econAll-1.png)<!-- -->

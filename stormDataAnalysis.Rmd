@@ -6,7 +6,7 @@ output:
 ---
 
 
-## Loading and preprocessing the data
+## Data Processing
 First, we load some libraries we will be using for this analysis
 
 ```{r libraries, echo = TRUE, warning=FALSE, message = FALSE}
@@ -57,7 +57,7 @@ stormData <- stormDataInit %>%
                 )
 ```
 
-The variables `PROPDMGEXP` and `CROPDMGEXP` give us a multiplicative factor for dollars of damage caused by a weather event. We treat "H" to mean hundred, "K" thousand, "M" million, "B" billion, and numeric values as scientific notation exponents (i.e. "2" corresponds to a multiplicative factor of 10^2), we prepare the columns PROPDMGEXP and CROPDMGEXP for numerical calculation. We use the `fct_collapse` function from the `forcats` package to make these columns uniform and numeric. For rows missing data in these columns, we assume the value is 0. 
+The variables `PROPDMGEXP` and `CROPDMGEXP` give us a multiplicative factor for dollars of damage caused by a weather event. We take "H" to mean hundred, "K" thousand, "M" million, "B" billion, and numeric values to mean a scientific notation exponents (i.e. "2" corresponds to a multiplicative factor of 10^2), we prepare the columns PROPDMGEXP and CROPDMGEXP for numerical calculation. We use the `fct_collapse` function from the `forcats` package to make these columns uniform by making them all scientific notation exponents. For rows missing data in these columns, we assume the value is 0. Finally, we transform this into numeric data.
 
 ```{r EXPPrep, echo = TRUE}
 stormData$PROPDMGEXP <- stormData$PROPDMGEXP %>% 
@@ -157,7 +157,7 @@ DryFactors <- c("DUST STORM", "BLOWING DUST", "VOLCANIC ASH", "DROUGHT")
 OtherFactors <- c("?", "OTHER", "Other", "HIGH", "APACHE COUNTY")
 ```
 
-We use the function `fct_collapse` from the `forcats` package to consolidate our `EventType` factor vector
+We use the function `fct_collapse` from the `forcats` package to consolidate our `EventType` factor vector.
 
 ```{r factorConsolidation, echo = TRUE}
 stormData$EventType <- fct_collapse(stormData$EventType,
@@ -180,10 +180,19 @@ stormData$EventType <- fct_collapse(stormData$EventType,
                 )
 ```
 
-Finally, let's get a summary of our data
+Let's now take a look at a sample of our processed data.
 
-```{r summary, echo = TRUE}
-stormDataSummary <- stormData %>% 
+```{r processedData, echo = TRUE}
+set.seed(10)
+stormData %>% sample_n(10)
+```
+
+## Results
+
+We now summarize our data by finding the sum of all of our relevant categories for all years, `r min(stormData$Year)` to `r max(stormData$Year)`.
+
+```{r summaryAll, echo = TRUE}
+stormDataSummaryAll <- stormData %>% 
         group_by(EventType) %>%
         summarize(
                 Fatalities = sum(Fatalities), 
@@ -191,10 +200,27 @@ stormDataSummary <- stormData %>%
                 PropertyDamage = sum(PropertyDamage), 
                 CropDamage = sum(CropDamage)
                 )
+stormDataSummaryAll
 ```
 
-Let's now take a look at our processed data.
+To see which type of weather events had the greatest effect on population health, we limit our view to fatalities and injuries. 
 
-```{r processedData, echo = TRUE}
-stormData
+```{r popHealthAll, echo = TRUE}
+popHealthAll <- stormDataSummaryAll %>% 
+        select(EventType, Fatalities, Injuries) %>% 
+        gather(Category, Value, Fatalities:Injuries)
+
+g1 <- ggplot(popHealthAll, aes(x = fct_reorder(EventType, Value, sum, .desc = TRUE), y = Value, fill = Category)) 
+
+g1 + geom_col(position = "stack") + theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5))
+```
+
+```{r econAll, echo = TRUE}
+econAll <- stormDataSummaryAll %>% 
+        select(EventType, PropertyDamage, CropDamage) %>% 
+        gather(Category, Value, PropertyDamage:CropDamage)
+
+g2 <- ggplot(econAll, aes(x = fct_reorder(EventType, Value, sum, .desc = TRUE), y = Value, fill = Category)) 
+
+g2 + geom_col(position = "stack") + theme(axis.text.x = element_text(angle = 90, hjust = 1,vjust = 0.5))
 ```
